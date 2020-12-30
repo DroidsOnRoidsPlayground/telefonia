@@ -1,15 +1,19 @@
 package pl.droidsonroids.phonetest
 
+import android.content.Intent
 import android.os.Bundle
-import com.google.android.material.snackbar.Snackbar
 import androidx.appcompat.app.AppCompatActivity
-import androidx.navigation.findNavController
 import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.navigateUp
-import androidx.navigation.ui.setupActionBarWithNavController
-import android.view.Menu
-import android.view.MenuItem
+import com.google.android.gms.auth.api.credentials.*
+import com.google.android.gms.auth.api.credentials.CredentialsApi.ACTIVITY_RESULT_NO_HINTS_AVAILABLE
+import com.google.android.gms.auth.api.credentials.CredentialsApi.CREDENTIAL_PICKER_REQUEST_CODE
+import com.google.android.gms.auth.api.phone.SmsRetriever
+import com.google.android.gms.tasks.Task
+import com.google.android.material.snackbar.Snackbar
 import pl.droidsonroids.phonetest.databinding.ActivityMainBinding
+
+
+private const val RESOLVE_HINT = 1
 
 class MainActivity : AppCompatActivity() {
 
@@ -22,37 +26,68 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        setSupportActionBar(binding.toolbar)
-
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        appBarConfiguration = AppBarConfiguration(navController.graph)
-        setupActionBarWithNavController(navController, appBarConfiguration)
-
         binding.fab.setOnClickListener { view ->
-            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                .setAction("Action", null).show()
+            requestHint()
+        }
+
+        binding.fab1.setOnClickListener { view ->
+            requestSms()
         }
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        menuInflater.inflate(R.menu.menu_main, menu)
-        return true
-    }
+    private fun requestSms() {
+        // Get an instance of SmsRetrieverClient, used to start listening for a matching
+        // SMS message.
+        val client = SmsRetriever.getClient(this)
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        return when (item.itemId) {
-            R.id.action_settings -> true
-            else -> super.onOptionsItemSelected(item)
+        // Starts SmsRetriever, which waits for ONE matching SMS message until timeout
+        // (5 minutes). The matching SMS message will be sent via a Broadcast Intent with
+        // action SmsRetriever#SMS_RETRIEVED_ACTION.
+
+        val task: Task<Void> = client.startSmsRetriever()
+
+        // Listen for success/failure of the start Task. If in a background thread, this
+        // can be made blocking using Tasks.await(task, [timeout]);
+
+        task.addOnSuccessListener {
+            // Successfully started retriever, expect broadcast intent
+            // ...
+        }
+
+        task.addOnFailureListener {
+            // Failed to start retriever, inspect Exception for more details
+            // ...
         }
     }
 
-    override fun onSupportNavigateUp(): Boolean {
-        val navController = findNavController(R.id.nav_host_fragment_content_main)
-        return navController.navigateUp(appBarConfiguration)
-            || super.onSupportNavigateUp()
+    private fun requestHint() {
+        val hintRequest = HintRequest.Builder()
+            .setHintPickerConfig(
+                CredentialPickerConfig.Builder()
+                    .setShowCancelButton(true)
+                    .build()
+            )
+            .setPhoneNumberIdentifierSupported(true)
+            .build()
+
+        val intent = Credentials.getClient(this).getHintPickerIntent(hintRequest)
+        startIntentSenderForResult(
+            intent.intentSender,
+            CREDENTIAL_PICKER_REQUEST_CODE, null, 0, 0, 0
+        )
+    }
+
+    // Obtain the phone number from the result
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == CREDENTIAL_PICKER_REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+                val credential: Credential? = data?.getParcelableExtra(Credential.EXTRA_KEY)
+                println(credential)
+            } else if (resultCode == ACTIVITY_RESULT_NO_HINTS_AVAILABLE) {
+                Snackbar.make(binding.root, "no hints", Snackbar.LENGTH_LONG).show()
+            }
+        }
     }
 }
+
